@@ -80,7 +80,7 @@
       (while gud-gdb-fetch-lines-in-progress
         (accept-process-output (get-buffer-process gud-comint-buffer))))
     (set-process-filter (get-buffer-process gud-comint-buffer) #'gud-filter)
-    (gud-gdb-completions-1 gud-gdb-fetched-lines)))
+    (gud-gdb-completions-1 (append gud-gdb-script-history gud-gdb-fetched-lines))))
 
 (defun gud-gdb-script-completion-at-point ()
   "same as `gud-gdb-completion-at-point' but read current line in buffer only"
@@ -117,6 +117,7 @@
       (add-hook 'completion-at-point-functions #'gud-gdb-script-completion-at-point
                 nil 'local)
       (set (make-local-variable 'gud-gdb-completion-function) 'gud-gdb-script-completions)
+      (set (make-local-variable 'gud-gdb-script-history) (gdb-history-load))
       (set (make-local-variable 'gud-minor-mode) 'gdbmi))))
 
 (defun send-buffer-to-gdb ()
@@ -134,17 +135,19 @@
       ((start (line-beginning-position))
        (end (line-end-position))
        (command (buffer-substring-no-properties start end)))
-    (process-send-string "*gud*" (concat command "\n"))))
+    (write-region (concat command "\n") nil "~/.gdb_history" t)
+    (process-send-string "*gud*" (concat command "\n"))
+    (push gud-gdb-script-history command)))
 
-(defun gdb-history-store ()
-  "save gdb command history for last command"
-  ()
-  )
+;; (defun gdb-history-store (command)
+;;   "save gdb command history for last command"
+;;   )
 
 (defun gdb-history-load ()
   "load gdb command history into gdb autocompletion var"
-  ()
-  )
+  (with-temp-buffer
+    (insert-file-contents "~/.gdb_history")
+    (split-string (buffer-string) "\n" t)))
 
 (defun save-gdb-out ()
   "save output of gdb buffer to tmp file"

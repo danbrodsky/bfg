@@ -1,7 +1,8 @@
 ;;; ~/.doom.d/modules/private/tools/bgf/autoload/gdb.el -*- lexical-binding: t; -*-
 
+
 (defun gud-gdb-script-filter (proc string)
-  ;; Here's where the actual buffer insertion is done
+  ;; Copy of `gud-filter' but uses hardcoded funcall for gdb script filter
   (let (output process-window)
     (if (buffer-name (process-buffer proc))
         (if gud-filter-defer-flag
@@ -9,7 +10,6 @@
             ;; save it for later.
             (setq gud-filter-pending-text
                   (concat (or gud-filter-pending-text "") string))
-
           ;; If we have to ask a question during the processing,
           ;; defer any additional text that comes from the debugger
           ;; during that time.
@@ -38,11 +38,9 @@
                       (and gud-last-frame
                            (>= (point) (process-mark proc))
                            (get-buffer-window (current-buffer)))))
-
               ;; Let the comint filter do the actual insertion.
               ;; That lets us inherit various comint features.
               (comint-output-filter proc output))
-
             ;; Put the arrow on the source line.
             ;; This must be outside of the save-excursion
             ;; in case the source file is our current buffer.
@@ -53,7 +51,6 @@
               ;; but not in a save-excursion, because that would restore point.
               (with-current-buffer (process-buffer proc)
                 (gud-display-frame))))
-
           ;; If we deferred text that arrived during this processing,
           ;; handle it now.
           (if gud-filter-pending-text
@@ -81,6 +78,7 @@
         (accept-process-output (get-buffer-process gud-comint-buffer))))
     (set-process-filter (get-buffer-process gud-comint-buffer) #'gud-filter)
     (gud-gdb-completions-1 (append gud-gdb-script-history gud-gdb-fetched-lines))))
+
 
 (defun gud-gdb-script-completion-at-point ()
   "same as `gud-gdb-completion-at-point' but read current line in buffer only"
@@ -120,6 +118,7 @@
       (set (make-local-variable 'gud-gdb-script-history) (gdb-history-load))
       (set (make-local-variable 'gud-minor-mode) 'gdbmi))))
 
+
 (defun send-buffer-to-gdb ()
   "send all commands in gdb script buffer to gdb"
   (interactive)
@@ -127,6 +126,7 @@
   (while (not (eobp))
     (send-line-to-gdb)
     (forward-line 1)))
+
 
 (defun send-line-to-gdb ()
   "send line at cursor to gdb"
@@ -139,9 +139,6 @@
     (process-send-string "*gud*" (concat command "\n"))
     (push gud-gdb-script-history command)))
 
-;; (defun gdb-history-store (command)
-;;   "save gdb command history for last command"
-;;   )
 
 (defun gdb-history-load ()
   "load gdb command history into gdb autocompletion var"
@@ -149,23 +146,28 @@
     (insert-file-contents "~/.gdb_history")
     (split-string (buffer-string) "\n" t)))
 
+
 (defun save-gdb-out ()
   "save output of gdb buffer to tmp file"
   ()
   )
+
 
 (defun view-gdb-out ()
   "open buffer with all gdb output seen"
   ()
   )
 
+
 (defun new-gef-instance ()
   "create new gef instance under gud mode"
   (gdb "gdb -i=mi"))
 
+
 (defun buffer-pty-name (buffer-name)
   "Get the pty of an existing buffer"
   (process-tty-name (get-buffer-process buffer-name)))
+
 
 (defun create-pty-buffer (name)
   "Hackish way to open a pretty buffer with a pty"
@@ -173,6 +175,7 @@
   (unless (get-buffer pty-buffer-name)
     (ansi-term "/usr/bin/cat" name))
   (switch-to-buffer pty-buffer-name))
+
 
 ;;;###autoload
 (defun bgf-run ()
@@ -183,10 +186,13 @@
   (with-current-buffer "*exploit*" (python-shell-send-buffer))
   (process-send-string "*gud*" (concat "target remote 0.0.0.0:9999\n")))
 
+
 ;;;###autoload
 (defun bgf ()
   "Start configured gdb session"
   (interactive)
+  (add-hook 'gud-mode-hook 'bgf-gdb-key-map)
+  (add-hook 'python-mode-hook 'bgf-py-key-map)
   (defvar target-file-path (read-file-name "Target: "))
   (defvar target-file-parent-path (file-name-directory target-file-path))
   (defvar target-exploit-path (concat target-file-parent-path "x.py"))
@@ -210,7 +216,6 @@
   (run-python)
   (with-selected-window (with-current-buffer "*exploit*" (split-window-vertically))
     (switch-to-buffer "*Python*"))
-
   (start-process-shell-command
    "*socat*"
    "*socat*"
@@ -222,3 +227,31 @@
   (process-send-string "*gud*" (concat "gef config context.redirect \"" (buffer-pty-name "*gef-output*") "\"\n"))
   (with-current-buffer "*exploit*" (python-shell-send-buffer))
   (process-send-string "*gud*" (concat "target remote 0.0.0.0:9999\n")))
+
+
+(defun bgf-gdb-key-map ()
+  (map!
+   :desc "send line to gdb"
+   :mode (gdb-script-mode)
+   :nvm "gl"
+   #'send-line-to-gdb)
+  (map!
+   :desc "send buffer to gdb"
+   :mode (gdb-script-mode)
+   :nvm "gL"
+   #'send-buffer-to-gdb))
+
+
+(defun bgf-py-key-map ()
+  (map!
+   :desc "send line to python"
+   :mode (python-mode)
+   :nvm "gl"
+   #'(lambda ()
+       (interactive)
+       (python-shell-send-region (line-beginning-position) (line-end-position))))
+  (map!
+   :desc "send buffer to python"
+   :mode (python-mode)
+   :nvm "gL"
+   #'python-shell-send-buffer))

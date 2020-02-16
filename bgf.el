@@ -104,7 +104,8 @@
 (defun new-gdb-script-buffer ()
   "create a new gdb script buffer"
   (defvar target-gdb-path (concat target-file-parent-path "script.gdb"))
-  (with-selected-window (with-current-buffer "*gud*" (split-window-horizontally))
+  (with-selected-window
+    (with-selected-window (get-buffer-window "*exploit*") (split-window-horizontally))
     (progn
       (unless (file-exists-p target-gdb-path)
         (copy-file (concat (file-name-directory load-file-name) "script.gdb") target-gdb-path))
@@ -117,7 +118,6 @@
       (set (make-local-variable 'gud-gdb-completion-function) 'gud-gdb-script-completions)
       (set (make-local-variable 'gud-gdb-script-history) (gdb-history-load))
       (set (make-local-variable 'gud-minor-mode) 'gdbmi))))
-
 
 (defun send-buffer-to-gdb ()
   "send all commands in gdb script buffer to gdb"
@@ -135,9 +135,12 @@
       ((start (line-beginning-position))
        (end (line-end-position))
        (command (buffer-substring-no-properties start end)))
-    (write-region (concat command "\n") nil "~/.gdb_history" t)
-    (process-send-string "*gud*" (concat command "\n"))
-    (push gud-gdb-script-history command)))
+    (unless (string= (string (char-after start)) "#")
+        (progn
+          (write-region (concat command "\n") nil "~/.gdb_history" t)
+          (process-send-string "*gud*" (concat command "\n"))
+          (process-send-string "*gef-output*" "\n\n")
+          (push gud-gdb-script-history command)))))
 
 
 (defun gdb-history-load ()
@@ -226,7 +229,8 @@
     " \\:9999 " target-file-path "\"" ))
   (process-send-string "*gud*" (concat "gef config context.redirect \"" (buffer-pty-name "*gef-output*") "\"\n"))
   (with-current-buffer "*exploit*" (python-shell-send-buffer))
-  (process-send-string "*gud*" (concat "target remote 0.0.0.0:9999\n")))
+  (process-send-string "*gud*" (concat "target remote 0.0.0.0:9999\n"))
+  (select-window (get-buffer-window "*exploit*")))
 
 
 (defun bgf-gdb-key-map ()

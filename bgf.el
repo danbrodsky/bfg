@@ -191,12 +191,15 @@
 
 
 ;;;###autoload
-(defun bgf ()
+(defun bgf (&optional target-file)
   "Start configured gdb session"
   (interactive)
   (add-hook 'gud-mode-hook 'bgf-gdb-key-map)
   (add-hook 'python-mode-hook 'bgf-py-key-map)
-  (defvar target-file-path (read-file-name "Target: "))
+  (defvar target-file-path
+    (if target-file
+      (concat (file-name-directory target-file) target-file)
+      (read-file-name "Target: ")))
   (defvar target-file-parent-path (file-name-directory target-file-path))
   (defvar target-exploit-path (concat target-file-parent-path "x.py"))
   (setq python-shell-interpreter "/home/esc/python2env/bin/ipython")

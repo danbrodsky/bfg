@@ -1,5 +1,9 @@
 ;;; ~/.doom.d/modules/private/tools/bgf/autoload/gdb.el -*- lexical-binding: t; -*-
 
+(defvar gdb-filter-function nil)
+(put 'gdb-filter-function 'permanent-local t)
+(defun gdb-filter-function (&rest args)
+  (apply gdb-filter-function args))
 
 (defun gud-gdb-script-filter (proc string)
   ;; Copy of `gud-filter' but uses hardcoded funcall for gdb script filter
@@ -29,7 +33,7 @@
                       (comint-update-fence)
                       (set-marker gud-delete-prompt-marker nil)))
                 ;; Save the process output, checking for source file markers.
-                (setq output (gud-gdbmi-fetch-lines-filter string))
+                (setq output (gdb-filter-function string))
                 ;; Check for a filename-and-line number.
                 ;; Don't display the specified file
                 ;; unless (1) point is at or after the position where output appears
@@ -57,25 +61,30 @@
               (gud-filter proc ""))))))
 
 
+(defvar gud-gdb-fetch-lines-string)
+(defvar gud-gdb-fetch-lines-break)
+(defvar gud-gdb-fetched-lines)
+(defvar gud-gdb-fetch-lines-in-progress)
+
+
 (defun gud-gdb-script-completions (context command)
   "Completion table for gdb script from existing gdbmi process"
   ;; (process-send-string (get-buffer-process gud-comint-buffer)
   ;;                      (concat "complete " context command "\n"))))
   ;; (accept-process-output (get-buffer-process gud-comint-buffer))
-  (defvar gud-gdb-fetch-lines-string)
-  (defvar gud-gdb-fetch-lines-break)
-  (defvar gud-gdb-fetched-lines)
-  (defvar gud-gdb-fetch-lines-in-progress)
   (let ((gud-gdb-fetch-lines-in-progress t)
         (gud-gdb-fetch-lines-string nil)
         (gud-gdb-fetch-lines-break (length context))
-        (gud-gdb-fetched-lines nil))
+        (gud-gdb-fetched-lines nil)
+        (gdb-filter-function #'gud-gdbmi-fetch-lines-filter))
+    ;; hijack process filter because it uses local variables
     (set-process-filter (get-buffer-process gud-comint-buffer) #'gud-gdb-script-filter)
     (with-current-buffer (gdb-get-buffer 'gdb-partial-output-buffer)
       (gdb-input (concat "complete " context command)
                  (lambda () (setq gud-gdb-fetch-lines-in-progress nil)))
       (while gud-gdb-fetch-lines-in-progress
         (accept-process-output (get-buffer-process gud-comint-buffer))))
+    ;; set process filter back to original
     (set-process-filter (get-buffer-process gud-comint-buffer) #'gud-filter)
     (gud-gdb-completions-1 (append gud-gdb-script-history gud-gdb-fetched-lines))))
 
@@ -105,7 +114,7 @@
   "create a new gdb script buffer"
   (defvar target-gdb-path (concat target-file-parent-path "script.gdb"))
   (with-selected-window
-    (with-selected-window (get-buffer-window "*exploit*") (split-window-horizontally))
+      (with-selected-window (get-buffer-window "*exploit*") (split-window-horizontally))
     (progn
       (unless (file-exists-p target-gdb-path)
         (copy-file (concat (file-name-directory load-file-name) "script.gdb") target-gdb-path))
@@ -118,6 +127,7 @@
       (set (make-local-variable 'gud-gdb-completion-function) 'gud-gdb-script-completions)
       (set (make-local-variable 'gud-gdb-script-history) (gdb-history-load))
       (set (make-local-variable 'gud-minor-mode) 'gdbmi))))
+
 
 (defun send-buffer-to-gdb ()
   "send all commands in gdb script buffer to gdb"
@@ -135,12 +145,11 @@
       ((start (line-beginning-position))
        (end (line-end-position))
        (command (buffer-substring-no-properties start end)))
-    (unless (string= (string (char-after start)) "#")
-        (progn
-          (write-region (concat command "\n") nil "~/.gdb_history" t)
-          (process-send-string "*gud*" (concat command "\n"))
-          (process-send-string "*gef-output*" "\n\n")
-          (push gud-gdb-script-history command)))))
+    (progn
+      (write-region (concat command "\n") nil "~/.gdb_history" t)
+      (process-send-string "*gud*" (concat command "\n"))
+      (process-send-string "*gef-output*" "\n\n")
+      (push command gud-gdb-script-history))))
 
 
 (defun gdb-history-load ()
@@ -198,7 +207,7 @@
   (add-hook 'python-mode-hook 'bgf-py-key-map)
   (defvar target-file-path
     (if target-file
-      (concat (file-name-directory target-file) target-file)
+        (concat (file-name-directory target-file) target-file)
       (read-file-name "Target: ")))
   (defvar target-file-parent-path (file-name-directory target-file-path))
   (defvar target-exploit-path (concat target-file-parent-path "x.py"))
@@ -232,8 +241,8 @@
     " \\:9999 " target-file-path "\"" ))
   (process-send-string "*gud*" (concat "gef config context.redirect \"" (buffer-pty-name "*gef-output*") "\"\n"))
   (with-current-buffer "*exploit*" (python-shell-send-buffer))
-  (process-send-string "*gud*" (concat "target remote 0.0.0.0:9999\n"))
-  (select-window (get-buffer-window "*exploit*")))
+  (process-send-string "*gud*" "gef-remote 0.0.0.0:9999\n")
+  (bgf-window-adjustments))
 
 
 (defun bgf-gdb-key-map ()
@@ -262,3 +271,15 @@
    :mode (python-mode)
    :nvm "gL"
    #'python-shell-send-buffer))
+
+(defun bgf-window-adjustments ()
+  "Last time moving around windows"
+  (delete-window (get-buffer-window "*gud*"))
+  (with-selected-window (get-buffer-window "*gef-output*")
+    (with-selected-window (split-window-vertically)
+      (progn
+        (shrink-window (/ (window-total-height) 2))
+        (switch-to-buffer "*gud*"))))
+  (with-selected-window (get-buffer-window "*Python*")
+    (shrink-window (/ (window-total-height) 2)))
+  (select-window (get-buffer-window "*exploit*")))

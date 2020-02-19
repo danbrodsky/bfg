@@ -117,7 +117,7 @@
       (with-selected-window (get-buffer-window "*exploit*") (split-window-horizontally))
     (progn
       (unless (file-exists-p target-gdb-path)
-        (copy-file (concat (file-name-directory load-file-name) "script.gdb") target-gdb-path))
+        (copy-file (concat (file-name-directory (symbol-file 'bgf)) "script.gdb") target-gdb-path))
       (find-file target-gdb-path)
       (rename-buffer "*gdb-script*")
       (add-hook 'gud-mode-hook #'company-mode)

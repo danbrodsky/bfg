@@ -224,7 +224,7 @@
   (with-selected-window (with-current-buffer "*gud*" (split-window-vertically))
     (progn
       (unless (file-exists-p target-exploit-path)
-        (copy-file (concat (file-name-directory load-file-name) "x.py") target-exploit-path))
+        (copy-file (concat (file-name-directory (symbol-file 'bgf)) "x.py") target-exploit-path))
       (find-file (concat target-file-parent-path "x.py"))
       (rename-buffer "*exploit*")))
   (new-gdb-script-buffer)

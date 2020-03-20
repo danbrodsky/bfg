@@ -1,5 +1,9 @@
 ;;; ~/.doom.d/modules/private/tools/bgf/autoload/gdb.el -*- lexical-binding: t; -*-
 
+;; +---+
+;; |GDB|
+;; +---+
+
 (defvar gdb-filter-function nil)
 (put 'gdb-filter-function 'permanent-local t)
 (defun gdb-filter-function (&rest args)
@@ -137,6 +141,7 @@
     (send-line-to-gdb)
     (forward-line 1)))
 
+
 (defun gdb-shell-send-region (start end)
   "send lines between start and end to gdb comint buffer"
   (interactive)
@@ -144,6 +149,7 @@
   (while (not (<= (- end (point)) 0))
     (gdb-shell-send-line)
     (forward-line 1)))
+
 
 (defun gdb-shell-send-line ()
   "send line at cursor to gdb"
@@ -156,7 +162,8 @@
     (progn
       (write-region (concat command "\n") nil "~/.gdb_history" t)
       (process-send-string "*gud*" (concat command "\n"))
-      (process-send-string "*gef-output*" "\n\n")
+      (process-send-string "*gef-output*" "\n")
+      (bgf-buffers-down)
       (push command gud-gdb-script-history)))))
 
 
@@ -184,28 +191,19 @@
   (gdb "gdb -i=mi"))
 
 
-(defun buffer-pty-name (buffer-name)
-  "Get the pty of an existing buffer"
-  (process-tty-name (get-buffer-process buffer-name)))
+;; +------+
+;; |PYTHON|
+;; +------+
 
-
-(defun create-pty-buffer (name)
-  "Hackish way to open a pretty buffer with a pty"
-  (defvar pty-buffer-name (concat "*" name "*"))
-  (unless (get-buffer pty-buffer-name)
-    (ansi-term "/usr/bin/cat" name))
-  (switch-to-buffer pty-buffer-name))
-
-
-;;;###autoload
-(defun bgf-run ()
-  "Run exploit on target program in gef"
+(defun python-shell-send-region--line ()
+  "send current line at mark to python shell"
   (interactive)
-  (process-send-string "*gud*" (concat "kill\n"))
-  (sit-for 1)
-  (with-current-buffer "*exploit*" (python-shell-send-buffer))
-  (process-send-string "*gud*" (concat "target remote 0.0.0.0:9999\n")))
+  (python-shell-send-region (line-beginning-position) (line-end-position)))
 
+
+;; +---+
+;; |BGF|
+;; +---+
 
 ;;;###autoload
 (defun bgf (&optional target-file)
@@ -253,6 +251,20 @@
   (bgf-window-adjustments))
 
 
+;;;###autoload
+(defun bgf-run ()
+  "Run exploit on target program in gef"
+  (interactive)
+  (process-send-string "*gud*" (concat "kill\n"))
+  (sit-for 1)
+  (with-current-buffer "*exploit*" (python-shell-send-buffer))
+  (process-send-string "*gud*" (concat "target remote 0.0.0.0:9999\n")))
+
+
+;; +-------------+
+;; |CONFIGURATION|
+;; +-------------+
+
 (defun bgf-gdb-conf ()
   (setq-local send-selected-area-function #'gdb-shell-send-region)
   (setq-local send-line-function #'gdb-shell-send-line)
@@ -272,6 +284,7 @@
    :nvm "gL"
    #'python-shell-send-buffer))
 
+
 (defun bgf-key-map ()
   (map!
    :desc "send buffer to target function"
@@ -283,6 +296,11 @@
        :desc "open ace-window"
        "SPC"
        #'ace-window))))
+
+
+;; +------+
+;; |WINDOW|
+;; +------+
 
 (defun bgf-window-adjustments ()
   "Last time moving around windows"
@@ -296,10 +314,16 @@
     (shrink-window (/ (window-total-height) 2)))
   (select-window (get-buffer-window "*exploit*")))
 
-(defun python-shell-send-region--line ()
+
+(defun bgf-buffers-down ()
+  "move all output buffers to most recent out"
   (interactive)
-  "send current line at mark to python shell"
-  (python-shell-send-region (line-beginning-position) (line-end-position)))
+  (with-selected-window (get-buffer-window "*gud*")
+    (goto-char (point-max)))
+  (with-selected-window (get-buffer-window "*gef-output*")
+    (goto-char (point-max)))
+  (with-selected-window (get-buffer-window "*Python*")
+    (goto-char (point-max))))
 
 ;; +----+
 ;; |UTIL|
@@ -313,3 +337,16 @@
   (if (use-region-p)
       (funcall send-selected-area-function start end)
     (funcall send-line-function)))
+
+
+(defun buffer-pty-name (buffer-name)
+  "Get the pty of an existing buffer"
+  (process-tty-name (get-buffer-process buffer-name)))
+
+
+(defun create-pty-buffer (name)
+  "Hackish way to open a pretty buffer with a pty"
+  (defvar pty-buffer-name (concat "*" name "*"))
+  (unless (get-buffer pty-buffer-name)
+    (ansi-term "/usr/bin/cat" name))
+  (switch-to-buffer pty-buffer-name))

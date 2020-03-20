@@ -11,3 +11,5 @@ be a standalone package.
 
 - containerize target using qemu
 - rr integration
+- gdb output logging, buffer flushing
+- python input logging

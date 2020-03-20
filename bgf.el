@@ -129,7 +129,7 @@
       (set (make-local-variable 'gud-minor-mode) 'gdbmi))))
 
 
-(defun send-buffer-to-gdb ()
+(defun gdb-shell-send-buffer ()
   "send all commands in gdb script buffer to gdb"
   (interactive)
   (goto-char (point-min))
@@ -137,12 +137,19 @@
     (send-line-to-gdb)
     (forward-line 1)))
 
+(defun gdb-shell-send-region (start end)
+  "send lines between start and end to gdb comint buffer"
+  (interactive)
+  (goto-char start)
+  (while (not (<= (- end (point)) 0))
+    (gdb-shell-send-line)
+    (forward-line 1)))
 
-(defun send-line-to-gdb ()
+(defun gdb-shell-send-line ()
   "send line at cursor to gdb"
   (interactive)
   (let*
-      ((start (line-beginning-position))
+      ((start (line-beginning-position)) ;
        (end (line-end-position))
        (command (buffer-substring-no-properties start end)))
     (unless (string= (string (char-after start)) "#")
@@ -204,8 +211,9 @@
 (defun bgf (&optional target-file)
   "Start configured gdb session"
   (interactive)
-  (add-hook 'gud-mode-hook 'bgf-gdb-key-map)
-  (add-hook 'python-mode-hook 'bgf-py-key-map)
+  (add-hook 'gdb-script-mode-hook 'bgf-gdb-conf)
+  (add-hook 'python-mode-hook 'bgf-py-conf)
+  (bgf-key-map)
   (defvar target-file-path
     (if target-file
         (concat (file-name-directory target-file) target-file)
@@ -245,32 +253,36 @@
   (bgf-window-adjustments))
 
 
-(defun bgf-gdb-key-map ()
-  (map!
-   :desc "send line to gdb"
-   :mode (gdb-script-mode)
-   :nvm "gl"
-   #'send-line-to-gdb)
+(defun bgf-gdb-conf ()
+  (setq-local send-selected-area-function #'gdb-shell-send-region)
+  (setq-local send-line-function #'gdb-shell-send-line)
   (map!
    :desc "send buffer to gdb"
    :mode (gdb-script-mode)
    :nvm "gL"
-   #'send-buffer-to-gdb))
+   #'gdb-shell-send-buffer))
 
 
-(defun bgf-py-key-map ()
-  (map!
-   :desc "send line to python"
-   :mode (python-mode)
-   :nvm "gl"
-   #'(lambda ()
-       (interactive)
-       (python-shell-send-region (line-beginning-position) (line-end-position))))
+(defun bgf-py-conf ()
+  (setq-local send-selected-area-function #'python-shell-send-region)
+  (setq-local send-line-function #'python-shell-send-region--line)
   (map!
    :desc "send buffer to python"
    :mode (python-mode)
    :nvm "gL"
    #'python-shell-send-buffer))
+
+(defun bgf-key-map ()
+  (map!
+   :desc "send buffer to target function"
+   :nvm "gl"
+   #'send-area)
+  (map!
+   (:leader
+     (:prefix "w"
+       :desc "open ace-window"
+       "SPC"
+       #'ace-window))))
 
 (defun bgf-window-adjustments ()
   "Last time moving around windows"
@@ -283,3 +295,21 @@
   (with-selected-window (get-buffer-window "*Python*")
     (shrink-window (/ (window-total-height) 2)))
   (select-window (get-buffer-window "*exploit*")))
+
+(defun python-shell-send-region--line ()
+  (interactive)
+  "send current line at mark to python shell"
+  (python-shell-send-region (line-beginning-position) (line-end-position)))
+
+;; +----+
+;; |UTIL|
+;; +----+
+
+(defvar send-line-function nil)
+(defvar send-selected-area-function nil)
+(defun send-area (start end)
+  "send selected line(s) to function"
+  (interactive "r")
+  (if (use-region-p)
+      (funcall send-selected-area-function start end)
+    (funcall send-line-function)))

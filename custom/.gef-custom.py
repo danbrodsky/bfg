@@ -26,3 +26,23 @@ class GrepCmd(gdb.Command):
 
 
 GrepCmd()  # required to get it registered
+
+
+class SymbolsCmd(gdb.Command):
+    """Get all symbols available
+    Usage: symbols """
+
+    def __init__(_):
+        super().__init__("symbols", gdb.COMMAND_STATUS)
+
+    def invoke(_, args_raw, __):
+        args = gdb.string_to_argv(args_raw)
+
+        global gef_out
+        gdb_out = gdb.execute("info functions", to_string=True)
+        gdb_out += gdb.execute("info variables", to_string=True)
+        gdb_out += gdb.execute("info types", to_string=True)
+        print(gdb_out)
+
+
+SymbolsCmd()  # required to get it registered

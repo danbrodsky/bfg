@@ -117,20 +117,18 @@
 (defun new-gdb-script-buffer ()
   "create a new gdb script buffer"
   (defvar target-gdb-path (concat target-file-parent-path "script.gdb"))
-  (with-selected-window
-      (with-selected-window (get-buffer-window "*exploit*") (split-window-horizontally))
-    (progn
-      (unless (file-exists-p target-gdb-path)
-        (copy-file (concat (file-name-directory (symbol-file 'bgf)) "script.gdb") target-gdb-path))
-      (find-file target-gdb-path)
-      (rename-buffer "*gdb-script*")
-      (add-hook 'gud-mode-hook #'company-mode)
-      (gdb-script-mode)
-      (add-hook 'completion-at-point-functions #'gud-gdb-script-completion-at-point
-                nil 'local)
-      (set (make-local-variable 'gud-gdb-completion-function) 'gud-gdb-script-completions)
-      (set (make-local-variable 'gud-gdb-script-history) (gdb-history-load))
-      (set (make-local-variable 'gud-minor-mode) 'gdbmi))))
+  (progn
+    (unless (file-exists-p target-gdb-path)
+      (copy-file (concat (file-name-directory (symbol-file 'bgf)) "script.gdb") target-gdb-path))
+    (find-file target-gdb-path)
+    (rename-buffer "*gdb-script*")
+    (add-hook 'gud-mode-hook #'company-mode)
+    (gdb-script-mode)
+    (add-hook 'completion-at-point-functions #'gud-gdb-script-completion-at-point
+              nil 'local)
+    (set (make-local-variable 'gud-gdb-completion-function) 'gud-gdb-script-completions)
+    (set (make-local-variable 'gud-gdb-script-history) (gdb-history-load))
+    (set (make-local-variable 'gud-minor-mode) 'gdbmi)))
 
 
 (defun gdb-shell-send-buffer ()
@@ -138,7 +136,7 @@
   (interactive)
   (goto-char (point-min))
   (while (not (eobp))
-    (send-line-to-gdb)
+    (gdb-shell-send-line)
     (forward-line 1)))
 
 
@@ -155,9 +153,9 @@
   "send line at cursor to gdb"
   (interactive)
   (let*
-      ((start (line-beginning-position)) ;
+      ((start (line-beginning-position))
        (end (line-end-position))
-       (command (buffer-substring-no-properties start end)))
+       (command (buffer-substring start end)))
     (unless (string= (string (char-after start)) "#")
     (progn
       (write-region (concat command "\n") nil "~/.gdb_history" t)
@@ -200,6 +198,48 @@
   (interactive)
   (python-shell-send-region (line-beginning-position) (line-end-position)))
 
+(defun lispy-eval-region ()
+  (interactive)
+  (save-excursion)
+  (goto-char (line-beginning-position))
+  (lispy-eval-and-comment)
+  (search-forward "=>")
+  (setq num-lines 0)
+  (while
+      (= (char-after (line-beginning-position)) ?#)
+    (setq num-lines (+ num-lines 1))
+    (when (= num-lines 5)
+      (set-mark (line-beginning-position)))
+    (next-line))
+  (previous-line)
+  (when (region-active-p)
+    (vimish-fold (region-beginning) (region-end))))
+
+(defun lispy-py-conf-init ()
+  (interactive)
+  (require 'le-python)
+  (require 'lispy)
+  (setq-local
+   outline-regexp "# ?\\*+"
+   lispy-outline (concat "^" outline-regexp)
+   outline-heading-end-regexp "\n"
+   completion-at-point-functions '(lispy-python-completion-at-point t)
+   lispy-no-space t
+   lispy-python-init-file "~/.pyrc.py")
+  (setq
+   +evil-want-o/O-to-continue-comments nil
+   lispy-left ""
+   lispy-right ""
+   lispy-outline-header "#")
+  (if (process-live-p (lispy--python-proc))
+      (let ((_res
+             (progn
+               (lispy--eval
+                (format "import os; os.chdir('%s')" default-directory))))))
+    (error "No process"))
+  (setq-local company-backends '(company-capf company-lsp)))
+
+
 
 ;; +---+
 ;; |BGF|
@@ -209,34 +249,32 @@
 (defun bgf (&optional target-file)
   "Start configured gdb session"
   (interactive)
+  (bgf--cleanup)
+  (bgf-key-map)
   (add-hook 'gdb-script-mode-hook 'bgf-gdb-conf)
   (add-hook 'python-mode-hook 'bgf-py-conf)
-  (bgf-key-map)
   (defvar target-file-path
     (if target-file
         (concat (file-name-directory target-file) target-file)
       (read-file-name "Target: ")))
   (defvar target-file-parent-path (file-name-directory target-file-path))
   (defvar target-exploit-path (concat target-file-parent-path "x.py"))
-  (setq python-shell-completion-native-disabled-interpreters '("pypy" "python"))
-  (setq python-shell-completion-native-try-output-timeout 1.0)
-  (setq python-shell-completion-native-enable nil)
+  (setq lsp-auto-guess-root t)
+  (progn
+    (unless (file-exists-p target-exploit-path)
+      (copy-file (concat (file-name-directory (symbol-file 'bgf)) "x.py") target-exploit-path))
+    (find-file (concat target-file-parent-path "x.py"))
+    (rename-buffer "*exploit*")
+    (lispy-py-conf-init)
+    (setq python-shell-buffer-name "lispy-python-default"))
+
   (add-hook 'gud-mode-hook #'company-mode)
   (unless (get-buffer "*gud*")
     (new-gef-instance))
   (company-mode-on)
   (with-selected-window (with-current-buffer "*gud*" (split-window-right))
     (create-pty-buffer "gef-output"))
-  (with-selected-window (with-current-buffer "*gud*" (split-window-vertically))
-    (progn
-      (unless (file-exists-p target-exploit-path)
-        (copy-file (concat (file-name-directory (symbol-file 'bgf)) "x.py") target-exploit-path))
-      (find-file (concat target-file-parent-path "x.py"))
-      (rename-buffer "*exploit*")))
   (new-gdb-script-buffer)
-  (run-python)
-  (with-selected-window (with-current-buffer "*exploit*" (split-window-vertically))
-    (switch-to-buffer "*Python*"))
   (start-process-shell-command
    "*socat*"
    "*socat*"
@@ -246,9 +284,10 @@
     (executable-find "gdbserver")
     " \\:9999 " target-file-path "\"" ))
   (process-send-string "*gud*" (concat "gef config context.redirect \"" (buffer-pty-name "*gef-output*") "\"\n"))
-  (with-current-buffer "*exploit*" (python-shell-send-buffer))
+  (with-current-buffer "*exploit*"
+    (python-shell-send-buffer))
   (process-send-string "*gud*" "gef-remote 0.0.0.0:9999\n")
-  (bgf-window-adjustments))
+  )
 
 
 ;;;###autoload
@@ -265,6 +304,17 @@
 ;; |CONFIGURATION|
 ;; +-------------+
 
+
+(defun bgf--cleanup ()
+  (setq-local kill-buffer-query-functions nil)
+  (unless (not (get-buffer "*gud*")) (kill-buffer "*gud*"))
+  (unless (not (get-buffer "*socat*")) (kill-buffer "*socat*"))
+  (unless (not (get-buffer "*gef-output*")) (kill-buffer "*gef-output*"))
+  (unless (not (get-buffer "*lispy-python-default*")) (kill-buffer "*lispy-python-default*"))
+  (unless (not (get-buffer "*exploit*")) (kill-buffer "*exploit*"))
+  (unless (not (get-buffer "*gdb-script*")) (kill-buffer "*gdb-script*")))
+
+
 (defun bgf-gdb-conf ()
   (setq-local send-selected-area-function #'gdb-shell-send-region)
   (setq-local send-line-function #'gdb-shell-send-line)
@@ -276,8 +326,8 @@
 
 
 (defun bgf-py-conf ()
-  (setq-local send-selected-area-function #'python-shell-send-region)
-  (setq-local send-line-function #'python-shell-send-region--line)
+  (setq-local send-selected-area-function #'lispy-eval-region)
+  (setq-local send-line-function #'lispy-eval-region)
   (map!
    :desc "send buffer to python"
    :mode (python-mode)
@@ -287,7 +337,7 @@
 
 (defun bgf-key-map ()
   (map!
-   :desc "send buffer to target function"
+   :desc "send line or selected area to target function"
    :nvm "gl"
    #'send-area)
   (map!
@@ -302,17 +352,6 @@
 ;; |WINDOW|
 ;; +------+
 
-(defun bgf-window-adjustments ()
-  "Last time moving around windows"
-  (delete-window (get-buffer-window "*gud*"))
-  (with-selected-window (get-buffer-window "*gef-output*")
-    (with-selected-window (split-window-vertically)
-      (progn
-        (shrink-window (/ (window-total-height) 2))
-        (switch-to-buffer "*gud*"))))
-  (with-selected-window (get-buffer-window "*Python*")
-    (shrink-window (/ (window-total-height) 2)))
-  (select-window (get-buffer-window "*exploit*")))
 
 
 (defun bgf-buffers-down ()
@@ -322,7 +361,7 @@
     (goto-char (point-max)))
   (with-selected-window (get-buffer-window "*gef-output*")
     (goto-char (point-max)))
-  (with-selected-window (get-buffer-window "*Python*")
+  (with-selected-window (get-buffer-window "*lispy-python-default*")
     (goto-char (point-max))))
 
 ;; +----+
@@ -334,7 +373,7 @@
 (defun send-area (start end)
   "send selected line(s) to function"
   (interactive "r")
-  (if (use-region-p)
+  (if (region-active-p)
       (funcall send-selected-area-function start end)
     (funcall send-line-function)))
 

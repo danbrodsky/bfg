@@ -287,6 +287,7 @@
   (with-current-buffer "*exploit*"
     (python-shell-send-buffer))
   (process-send-string "*gud*" "gef-remote 0.0.0.0:9999\n")
+  (bgf-window-setup)
   )
 
 
@@ -352,6 +353,26 @@
 ;; |WINDOW|
 ;; +------+
 
+(defun bgf-window-setup ()
+  "initial window setup for bgf"
+  (interactive)
+  (delete-other-windows)
+  (split-window-right)
+  (split-window-below)
+  (switch-to-buffer "*exploit*")
+  (split-window-right)
+  (evil-window-right 1)
+  (switch-to-buffer "*gdb-script*")
+  (evil-window-down 1)
+  (switch-to-buffer "*lispy-python-default*")
+  (shrink-window (round (* (window-height) 0.5)))
+  (evil-window-right 1)
+  (switch-to-buffer "*gef-output*")
+  (split-window-below)
+  (evil-window-down 1)
+  (switch-to-buffer "*gud*")
+  (shrink-window (round (* (window-height) 0.5)))
+  )
 
 
 (defun bgf-buffers-down ()
